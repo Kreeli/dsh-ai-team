@@ -1,0 +1,27 @@
+# --- 敏感 / 本机专属文件（不入库）---
+# 团队配置备份：含个人模型路由与 provider 配置
+team.backup.json
+# 开发需求文档：含本机绝对路径、~/.dsh 目录结构、账号线索
+开发需求文档.md
+
+# --- 通用忽略 ---
+node_modules/
+dist/
+build/
+*.log
+npm-debug.log*
+pnpm-debug.log*
+yarn-debug.log*
+
+# 编辑器 / 系统
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# 运行时缓存
+.cache/
+*.tsbuildinfo
