@@ -450,8 +450,10 @@ function currentCatalog() {
  * model selector uses: the llm registry (configurable providers from the
  * settings directory + registered adapters), models listed per provider.
  *
- * When the Session carries a subagent allowlist, the catalog is narrowed to
- * it so every option in the card is dispatchable.
+ * The full catalog is always listed — the user asked to see every model they
+ * can reach. Each model carries `dispatchable`, because the subagent tool
+ * rejects any route outside the Session's allowlist; the picker marks those
+ * instead of silently hiding them or letting a doomed choice look valid.
  */
 async function buildProviderCatalog(llm) {
   const allow = allowedRouteKeys();
@@ -480,12 +482,18 @@ async function buildProviderCatalog(llm) {
     p.models = [];
     for (const m of models) {
       if (!m || typeof m.id !== 'string' || seen.has(m.id)) continue;
-      if (allow && !allow.has(`${p.id}/${m.id}`)) continue;
       seen.add(m.id);
-      p.models.push({ id: m.id, name: (typeof m.name === 'string' && m.name) || m.id });
+      p.models.push({
+        id: m.id,
+        name: (typeof m.name === 'string' && m.name) || m.id,
+        // `dispatchable` is the truth the picker needs: the subagent tool
+        // rejects any route outside the Session allowlist, so an option that
+        // is merely listed would fail only after the user commits to it.
+        dispatchable: allow ? allow.has(`${p.id}/${m.id}`) : true,
+      });
     }
-    // A provider with nothing dispatchable is noise in the picker.
-    if (allow && p.models.length === 0) continue;
+    // Providers with no models at all carry no information for the picker.
+    if (p.models.length === 0) continue;
     out.push({
       id: p.id,
       name: p.name,
@@ -493,6 +501,12 @@ async function buildProviderCatalog(llm) {
       ...(p.unavailable ? { unavailable: true } : {}),
     });
   }
+  // Dispatchable providers first, so the common case needs no scrolling.
+  out.sort((a, b) => {
+    const aAny = a.models.some((m) => m.dispatchable) ? 0 : 1;
+    const bAny = b.models.some((m) => m.dispatchable) ? 0 : 1;
+    return aAny - bAny || a.id.localeCompare(b.id);
+  });
   return out;
 }
 

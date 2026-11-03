@@ -370,11 +370,19 @@ window.__ModuleLoader__.load({
           style: selectStyle,
         }, [
           ...(isEmpty ? [h('option', { key: '__empty', value: '__empty' }, '⚠ 未选择模型（必须选一个，否则保存后会被丢弃）')] : []),
+          // Every reachable model is listed. Ones the Session cannot delegate
+          // to are marked in the label and disabled, so a doomed pick is
+          // visible rather than silently absent.
           ...groups.map((p) => h('optgroup', { key: p.id, label: p.name || p.id },
-            p.models.map((m) => h('option', {
-              key: m.id,
-              value: `${p.id}||${m.id}`,
-            }, `${m.name}${m.name !== m.id ? ` · ${m.id}` : ''}`)))),
+            p.models.map((m) => {
+              const blocked = m.dispatchable === false;
+              const name = `${m.name}${m.name !== m.id ? ` · ${m.id}` : ''}`;
+              return h('option', {
+                key: m.id,
+                value: `${p.id}||${m.id}`,
+                disabled: blocked,
+              }, blocked ? `${name}（本会话不可派单）` : name);
+            }))),
           h('optgroup', { key: '__custom', label: '自定义' },
             h('option', { key: '__custom', value: '__custom' }, '手填 provider / model…')),
         ]);

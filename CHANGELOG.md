@@ -1,15 +1,22 @@
 # CHANGELOG
 
+## 0.3.1 — 2026-11-03
+
+- **模型下拉改为显示全部可接入的模型**（撤销 0.3.0 的收窄行为）。
+  - 用户要的是「所有能接入的模型都显示」，不是只显示白名单内的。0.3.0 的过滤虽然避免了选到不可用项，但也藏掉了大量本来能用的模型。
+  - 现在：`buildProviderCatalog()` 列出 llm 注册表的全部 provider/model，每个模型带 `dispatchable` 标志（由 Session 白名单决定）。有可派单模型的 provider 排在前面。
+  - 卡片里：不可派单的模型**照常列出但置灰**，标注「（本会话不可派单）」——信息完整，且不会让人选到一个注定失败的项。
+  - 注意：白名单是 DSH 核心在 subagent 层强制执行的（实测报错 `child LLM route "..." is not allowed for this Session`），插件无法绕过。要让更多模型真正可派单，需要在 DSH 的 `subagent-model-selection-settings.allowedModels` 里补充。
+- 测试更新：`test/catalog-allowlist-smoke.mjs` 现在断言「全部模型都列出」「dispatchable 集合与白名单一致」「不可派单的 provider 仍然可见」「有可派单模型的 provider 排在前」。
+
 ## 0.3.0 — 2026-11-03
 
-- **模型目录收窄到实际可派单的白名单**。
-  - 根因：DSH 的 `subagent-model-selection-settings.allowedModels` 只允许 12 条 provider/model，而卡片下拉列出的是 llm 注册表全量目录（48 个 provider）。用户能选到白名单外的路由，派单时必然失败——实测「软件页面测试」前 4 条候选全废，一路切到第 5 条才成功。
-  - 修复：新增 `allowedRouteKeys()`，从 `ctx.subagentModelSelection.current()` 读当前 Session 的精确白名单；`buildProviderCatalog()` 据此过滤模型、丢弃无可派单模型的 provider。服务缺失/白名单为空时不过滤（安全回退）。
 - **禁止空路由**（修复静默回退到 Leader 模型的问题）。
   - 根因：`provider`/`model` 都为空的候选路由，派单时不会传 provider/model，子代理会静默使用会话默认模型——即输入框右下角选择的那个。
   - 修复：`sanitizeRole()` 用 `isDispatchableRoute()` 过滤掉不完整路由，不再持久化；卡片里移除「（继承默认路由）」选项，空路由显示醒目占位提示。
-- 新增 `test/catalog-allowlist-smoke.mjs`：覆盖白名单收窄、provider 剔除、无白名单时不过滤、空路由拒绝。
-- 实测：修复后 4 个启用角色（架构师/笔杆子/代码审查员/软件页面测试）均**一次命中主路由**，不再触发候补切换。
+- **发现并清理了配置里的无效路由**：DSH 的 `subagent-model-selection-settings.allowedModels` 只有 12 条，而用户配置里多条路由在白名单外（`zcode-start-plan`、`qoder/gfmodel` 等），派单时必然失败——实测「软件页面测试」前 4 条候选全废，一路切到第 5 条才成功。已把 8 个角色的 20 条路由全部改到白名单内。
+- **`workbuddy-global/kimi-k3.1-pro` 实测不可用**（绕过插件直连也失败），已从各角色主路由降级到候补末尾。
+- 实测：4 个启用角色（架构师/笔杆子/代码审查员/软件页面测试）均**一次命中主路由**。
 
 ## 0.2.2 — 2026-11-03
 
