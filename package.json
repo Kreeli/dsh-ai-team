@@ -1,6 +1,6 @@
 {
   "name": "@local/dsh-ai-team",
-  "version": "0.2.2",
+  "version": "0.3.0",
   "private": true,
   "type": "module",
   "description": "Multi-model AI team: user-defined roles dispatched to different LLM providers.",

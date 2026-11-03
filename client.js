@@ -133,7 +133,7 @@ window.__ModuleLoader__.load({
     }
 
     function routeSummary(role, providers) {
-      if (!role.routes || role.routes.length === 0) return '继承默认路由';
+      if (!role.routes || role.routes.length === 0) return '⚠ 未配置路由（该成员无法派单）';
       const primary = role.routes[0];
       const rest = role.routes.length > 1 ? ` +${role.routes.length - 1} 候补` : '';
       return `${routeLabel(primary, providers)}${rest}`;
@@ -348,16 +348,20 @@ window.__ModuleLoader__.load({
         && p.models?.some((m) => m.id === route.model));
 
       const routeSelect = (route, onChange) => {
-        const value = route.provider === '' && route.model === ''
-          ? ''
+        // An empty route must never silently mean "inherit the session model":
+        // dispatch only forwards provider/model when both are set, so an empty
+        // route would quietly run the child on the default (Leader) model.
+        const isEmpty = !route.provider || !route.model;
+        const value = isEmpty
+          ? '__empty'
           : (knownRoute(route) ? `${route.provider}||${route.model}` : '__custom');
         const groups = providers.filter((p) => (p.models?.length ?? 0) > 0);
         return h('select', {
           value,
           onChange: (e) => {
             const v = e.target.value;
-            if (v === '') onChange({ provider: '', model: '' });
-            else if (v === '__custom') onChange({ provider: route.provider || 'custom-provider', model: route.model });
+            if (v === '__empty') return; // placeholder, not a real choice
+            if (v === '__custom') onChange({ provider: route.provider || 'custom-provider', model: route.model });
             else {
               const sep = v.indexOf('||');
               onChange({ provider: v.slice(0, sep), model: v.slice(sep + 2) });
@@ -365,7 +369,7 @@ window.__ModuleLoader__.load({
           },
           style: selectStyle,
         }, [
-          h('option', { key: '', value: '' }, '（继承默认路由）'),
+          ...(isEmpty ? [h('option', { key: '__empty', value: '__empty' }, '⚠ 未选择模型（必须选一个，否则保存后会被丢弃）')] : []),
           ...groups.map((p) => h('optgroup', { key: p.id, label: p.name || p.id },
             p.models.map((m) => h('option', {
               key: m.id,

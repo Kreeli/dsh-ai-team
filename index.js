@@ -174,12 +174,24 @@ function sanitizeRoute(r) {
   };
 }
 
+/**
+ * A route with no provider/model does NOT mean "inherit the default" — the
+ * dispatch path only forwards provider/model when both are set, so such a
+ * route silently runs the child on the session's default model. That is
+ * exactly the surprise this guard removes: incomplete routes are dropped
+ * instead of being persisted.
+ */
+function isDispatchableRoute(route) {
+  return Boolean(route && route.provider && route.model);
+}
+
 function sanitizeRole(r) {
-  const routes = Array.isArray(r?.routes) && r.routes.length > 0
+  const raw = Array.isArray(r?.routes) && r.routes.length > 0
     ? r.routes.map(sanitizeRoute)
     : (r?.provider || r?.model
       ? [sanitizeRoute(r)]
       : []);
+  const routes = raw.filter(isDispatchableRoute);
   const primary = routes[0] ?? { provider: '', model: '', reasoningEffort: '' };
   return {
     id: String(r?.id ?? '').trim() || `role-${Math.random().toString(36).slice(2, 8)}`,
@@ -393,7 +405,39 @@ function isTrustedRequest(req) {
 // Live service references filled by scoped injects in apply(); read by the
 // API route. Empty until the services activate — the route then serves the
 // fallback catalog.
-const serviceRefs = { webServer: null, llm: null, subagents: null };
+const serviceRefs = { webServer: null, llm: null, subagents: null, modelSelection: null };
+
+/**
+ * Read the exact provider/model routes this Session may delegate to.
+ *
+ * The subagent tool enforces `allowedModels`; anything outside it fails at
+ * dispatch time. Surfacing the full llm catalog in the picker would let the
+ * user choose routes that can never work, so the catalog is narrowed to this
+ * allowlist whenever the host exposes one.
+ *
+ * Returns null when the host gives us no allowlist — then the full catalog
+ * stands (nothing is being filtered anyway).
+ */
+function allowedRouteKeys() {
+  const sel = serviceRefs.modelSelection;
+  if (!sel || typeof sel.current !== 'function') return null;
+  let snapshot;
+  try {
+    snapshot = sel.current();
+  } catch {
+    return null;
+  }
+  if (!snapshot || snapshot.enabled === false) return null;
+  const list = Array.isArray(snapshot.allowedModels) ? snapshot.allowedModels : [];
+  if (list.length === 0) return null;
+  const keys = new Set();
+  for (const entry of list) {
+    const provider = String(entry?.provider ?? '').trim();
+    const model = String(entry?.model ?? '').trim();
+    if (provider && model) keys.add(`${provider}/${model}`);
+  }
+  return keys.size > 0 ? keys : null;
+}
 
 function currentCatalog() {
   const llm = serviceRefs.llm;
@@ -405,8 +449,12 @@ function currentCatalog() {
  * Build the provider/model catalog from the SAME source the composer's
  * model selector uses: the llm registry (configurable providers from the
  * settings directory + registered adapters), models listed per provider.
+ *
+ * When the Session carries a subagent allowlist, the catalog is narrowed to
+ * it so every option in the card is dispatchable.
  */
 async function buildProviderCatalog(llm) {
+  const allow = allowedRouteKeys();
   const providers = new Map();
   const add = (id, name) => {
     if (typeof id !== 'string' || id === '') return;
@@ -432,9 +480,12 @@ async function buildProviderCatalog(llm) {
     p.models = [];
     for (const m of models) {
       if (!m || typeof m.id !== 'string' || seen.has(m.id)) continue;
+      if (allow && !allow.has(`${p.id}/${m.id}`)) continue;
       seen.add(m.id);
       p.models.push({ id: m.id, name: (typeof m.name === 'string' && m.name) || m.id });
     }
+    // A provider with nothing dispatchable is noise in the picker.
+    if (allow && p.models.length === 0) continue;
     out.push({
       id: p.id,
       name: p.name,
@@ -526,6 +577,11 @@ export async function apply(ctx) {
       }
     });
     ctx.inject(['llm'], (scope) => { serviceRefs.llm = scope.llm; });
+    // Optional: the Session's subagent allowlist. Absent on older hosts, in
+    // which case the picker simply shows the whole catalog (unfiltered).
+    ctx.inject(['subagentModelSelection'], (scope) => {
+      serviceRefs.modelSelection = scope.subagentModelSelection ?? null;
+    });
   }
 
   // 2. Dispatch guard (hard constraints + master switch). Synchronous.
